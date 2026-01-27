@@ -1,0 +1,29 @@
+# docker-compose.yml
+# Поднимает два сервиса: `web` (Next.js приложение с API routes) и `mongo` (MongoDB для локальной разработки/демо).
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "3000:3000"
+    environment:
+      # По умолчанию используем локальную MongoDB из docker-compose.
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/cnpf_feeder}
+      AUTH_SECRET: ${AUTH_SECRET:-change_this_to_a_long_random_string}
+      NODE_ENV: production
+
+volumes:
+  mongo_data:
+

@@ -1,4 +1,9 @@
 .page {
+/* src/app/page.module.css
+ * CSS-модуль от create-next-app. Сейчас не используется страницей `/`.
+ * Можно удалить позже или вернуть стили, если снова будем использовать этот layout.
+ */
+.page {
   --background: #fafafa;
   --foreground: #fff;
 

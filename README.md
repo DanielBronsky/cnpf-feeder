@@ -1,36 +1,143 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CNPF Feeder
 
-## Getting Started
+> Зачем этот файл: `README.md` — точка входа в проект (как установить, запустить, как показать демо/презентацию).
 
-First, run the development server:
+Полезные доки:
+- `docs/ARCHITECTURE.md` — архитектура: что за что отвечает
+- `docs/BUILD_STEPS.md` — шаги, как мы собрали проект (Next.js → auth/Mongo → Docker Compose)
+
+## Требования
+
+- **Node.js >= 22.0.0** (обязательно!)
+- npm >= 10.0.0 **или** Yarn (рекомендуется для локального запуска команд)
+
+## Установка Node.js 22
+
+### Вариант 1: Через nvm-windows
+
+1. Установите [nvm-windows](https://github.com/coreybutler/nvm-windows/releases)
+2. Откройте PowerShell от имени администратора и выполните:
+   ```powershell
+   nvm install 22
+   nvm use 22
+   ```
+
+### Вариант 2: Прямая установка
+
+Скачайте и установите [Node.js 22 LTS](https://nodejs.org/)
+
+### Проверка версии
+
+```powershell
+node --version
+# Должно быть: v22.x.x
+```
+
+## Установка зависимостей
+
+```bash
+npm install
+```
+
+или через Yarn:
+
+```bash
+yarn install
+```
+
+## Переменные окружения
+
+Создайте файл `.env.local` в корне проекта.
+
+В репозитории есть шаблон `env.example` — можно скопировать его:
+
+```bash
+cp env.example .env.local
+```
+
+```env
+MONGODB_URI="mongodb://localhost:27017/cnpf_feeder"
+AUTH_SECRET="change_this_to_a_long_random_string"
+```
+
+## Запуск
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+или:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+yarn dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Запуск через Docker Compose (по заданию)
 
-## Learn More
+Поднимает **Next.js app + MongoDB** локально:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+AUTH_SECRET="change_this_to_a_long_random_string" docker compose up --build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+То же самое, но через скрипты проекта (удобнее для демо):
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+yarn compose:up
+```
 
-## Deploy on Vercel
+> Важно: `docker-compose.yml` поднимает `web` в **production** (и `Dockerfile` делает `npm run build`), поэтому при изменениях кода нужно пересобирать контейнер (`compose:up`).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+После старта:
+- `http://localhost:3000/auth/register`
+- `http://localhost:3000/auth/login`
+- `http://localhost:3000/api/auth/me`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Демо/презентация (пошагово): Docker Compose + фронт
+
+### 1) Запусти Docker Desktop
+
+Убедись, что Docker daemon запущен:
+
+```bash
+docker info
+```
+
+### 2) Перейди в папку проекта
+
+```bash
+cd /Users/daniel/projects/cnpf.feeder.md
+```
+
+### 3) Подними всё одной командой (в фоне)
+
+```bash
+yarn compose:up
+```
+
+### 4) Покажи, что поднялись контейнеры
+
+```bash
+yarn compose:ps
+```
+
+Должны быть сервисы `web` и `mongo` в статусе `Up`.
+
+### 5) Открой приложение в браузере
+
+- `http://localhost:3000/`
+- `http://localhost:3000/auth/register`
+- `http://localhost:3000/auth/login`
+- `http://localhost:3000/api/auth/me`
+
+### 6) (Опционально) Логи
+
+```bash
+yarn compose:logs
+```
+
+### 7) Остановить после демо
+
+```bash
+yarn compose:down
+```

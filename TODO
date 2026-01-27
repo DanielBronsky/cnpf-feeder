@@ -1,0 +1,412 @@
+TODO
+Зачем этот файл: это “живой” чеклист/инструкция, по которой мы собираем проект шаг за шагом.
+
+Ок. Делаем один Next.js проект в папке cnpf.feeder.md, с App Router, MongoDB (локально через docker compose), email+password, и пока без отдельного бэка.
+
+Ниже шаги “делай как написано” + минимальные файлы, чтобы уже можно было зарегистрироваться/войти/получить me.
+
+Чеклист прогресса (что сделано в репозитории):
+- [x] Шаг 1. Инициализируй Next.js (App Router + TS) в твоей папке
+- [x] Шаг 2. Поставь зависимости (Mongo + auth + валидация)
+- [x] Шаг 3. Добавь Dockerfile + docker-compose (web + mongo)
+- [x] Шаг 4. Задай переменные окружения (AUTH_SECRET; MONGODB_URI опционально)
+- [x] Шаг 5. Добавь Mongo клиент (пул соединений)
+- [x] Шаг 6. Добавь утилиты для паролей + JWT cookie
+- [x] Шаг 7. API: регистрация / логин / me
+- [x] Шаг 8. Быстрые страницы для проверки (без дизайна)
+- [x] (Доп) Главная `/` показывает me и ссылки (без хардкода localhost)
+- [x] Шаг 9. Запусти и проверь (docker compose)
+- [x] Шаг 10. Документация проекта (архитектура + шаги сборки) и комментарии в файлах
+- [x] Шаг 11. Красивые auth страницы + Header + Admin Users + Settings (аватар/ник/пароль)
+- [ ] Шаг 12. “Вести с водоёмов / отчёты” + админ-навигация + соревнования (первый скелет)
+
+Шаг 1. Инициализируй Next.js (App Router + TS) в твоей папке
+
+Перейди в папку и создай проект прямо там:
+
+cd cnpf.feeder.md
+npx create-next-app@latest . --ts --eslint --app --src-dir --turbopack
+
+Шаг 2. Поставь зависимости (Mongo + auth + валидация)
+pnpm add mongodb bcryptjs jose zod
+
+Шаг 3. Docker Compose (локальная MongoDB)
+
+В корне проекта уже есть `Dockerfile` и `docker-compose.yml`.
+
+Шаг 4. Добавь переменные окружения
+
+Минимум нужен `AUTH_SECRET`. Если запускаешь не через docker compose, тогда еще нужен `MONGODB_URI`.
+
+Если хочешь локально (не в docker) — создай `.env.local` так:
+
+cp env.example .env.local
+
+MONGODB_URI="mongodb://localhost:27017/cnpf_feeder"
+AUTH_SECRET="change_this_to_a_long_random_string"
+
+
+AUTH_SECRET — длинная случайная строка (можно сгенерировать любым генератором).
+
+Шаг 5. Добавь Mongo клиент (пул соединений)
+
+Создай файл: src/lib/mongodb.ts
+
+import { MongoClient } from 'mongodb';
+
+const uri = process.env.MONGODB_URI;
+if (!uri) throw new Error('Missing MONGODB_URI in .env.local');
+
+let client: MongoClient;
+let clientPromise: Promise<MongoClient>;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var _mongoClientPromise: Promise<MongoClient> | undefined;
+}
+
+if (process.env.NODE_ENV === 'development') {
+  if (!global._mongoClientPromise) {
+    client = new MongoClient(uri);
+    global._mongoClientPromise = client.connect();
+  }
+  clientPromise = global._mongoClientPromise!;
+} else {
+  client = new MongoClient(uri);
+  clientPromise = client.connect();
+}
+
+export async function getDb() {
+  const c = await clientPromise;
+  return c.db(); // db name берётся из URI, иначе будет default
+}
+
+Шаг 6. Добавь утилиты для паролей + JWT cookie
+src/lib/password.ts
+import bcrypt from 'bcryptjs';
+
+export async function hashPassword(password: string) {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(password, salt);
+}
+
+export async function verifyPassword(password: string, hash: string) {
+  return bcrypt.compare(password, hash);
+}
+
+src/lib/auth.ts
+import { SignJWT, jwtVerify } from 'jose';
+
+const secret = process.env.AUTH_SECRET;
+if (!secret) throw new Error('Missing AUTH_SECRET in .env.local');
+
+const key = new TextEncoder().encode(secret);
+
+export type AuthPayload = {
+  sub: string; // userId
+  email: string;
+};
+
+export async function signAuthToken(payload: AuthPayload) {
+  return new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('30d')
+    .sign(key);
+}
+
+export async function verifyAuthToken(token: string) {
+  const { payload } = await jwtVerify(token, key);
+  return payload as unknown as AuthPayload & { exp: number; iat: number };
+}
+
+export const AUTH_COOKIE = 'cnpf_auth';
+
+Шаг 7. API: регистрация / логин / me
+src/app/api/auth/register/route.ts
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { getDb } from '@/lib/mongodb';
+import { hashPassword } from '@/lib/password';
+
+const Schema = z.object({
+  email: z.string().email().toLowerCase(),
+  password: z.string().min(8).max(72),
+});
+
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => null);
+  const parsed = Schema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
+  }
+
+  const { email, password } = parsed.data;
+
+  const db = await getDb();
+  const users = db.collection('users');
+
+  const existing = await users.findOne({ email });
+  if (existing) {
+    return NextResponse.json({ error: 'Email already used' }, { status: 409 });
+  }
+
+  const passwordHash = await hashPassword(password);
+
+  const res = await users.insertOne({
+    email,
+    passwordHash,
+    createdAt: new Date(),
+  });
+
+  return NextResponse.json({ ok: true, userId: res.insertedId.toString() });
+}
+
+src/app/api/auth/login/route.ts
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { getDb } from '@/lib/mongodb';
+import { verifyPassword } from '@/lib/password';
+import { AUTH_COOKIE, signAuthToken } from '@/lib/auth';
+
+const Schema = z.object({
+  email: z.string().email().toLowerCase(),
+  password: z.string().min(1).max(72),
+});
+
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => null);
+  const parsed = Schema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
+  }
+
+  const { email, password } = parsed.data;
+
+  const db = await getDb();
+  const users = db.collection('users');
+
+  const user = await users.findOne<{ _id: any; email: string; passwordHash: string }>({ email });
+  if (!user) {
+    return NextResponse.json({ error: 'Wrong email or password' }, { status: 401 });
+  }
+
+  const ok = await verifyPassword(password, user.passwordHash);
+  if (!ok) {
+    return NextResponse.json({ error: 'Wrong email or password' }, { status: 401 });
+  }
+
+  const token = await signAuthToken({ sub: user._id.toString(), email: user.email });
+
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(AUTH_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30, // 30d
+  });
+  return res;
+}
+
+src/app/api/auth/me/route.ts
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { AUTH_COOKIE, verifyAuthToken } from '@/lib/auth';
+import { getDb } from '@/lib/mongodb';
+import { ObjectId } from 'mongodb';
+
+export async function GET() {
+  const token = (await cookies()).get(AUTH_COOKIE)?.value;
+  if (!token) return NextResponse.json({ user: null });
+
+  try {
+    const payload = await verifyAuthToken(token);
+
+    const db = await getDb();
+    const user = await db.collection('users').findOne(
+      { _id: new ObjectId(payload.sub) },
+      { projection: { passwordHash: 0 } }
+    );
+
+    if (!user) return NextResponse.json({ user: null });
+
+    return NextResponse.json({
+      user: { id: user._id.toString(), email: user.email },
+    });
+  } catch {
+    return NextResponse.json({ user: null });
+  }
+}
+
+Шаг 8. Быстрые страницы для проверки (без дизайна)
+
+Создай:
+
+src/app/auth/register/page.tsx
+'use client';
+
+import { useState } from 'react';
+
+export default function RegisterPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [msg, setMsg] = useState<string>('');
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg('');
+
+    const r = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) setMsg(data?.error ?? 'Error');
+    else setMsg('Registered! Now go to /auth/login');
+  }
+
+  return (
+    <main style={{ padding: 24 }}>
+      <h1>Register</h1>
+      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12, maxWidth: 320 }}>
+        <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input placeholder="password (min 8)" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <button type="submit">Create account</button>
+      </form>
+      {msg && <p>{msg}</p>}
+    </main>
+  );
+}
+
+src/app/auth/login/page.tsx
+'use client';
+
+import { useState } from 'react';
+
+export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [msg, setMsg] = useState<string>('');
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg('');
+
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) setMsg(data?.error ?? 'Error');
+    else setMsg('Logged in! Check /');
+  }
+
+  return (
+    <main style={{ padding: 24 }}>
+      <h1>Login</h1>
+      <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12, maxWidth: 320 }}>
+        <input placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input placeholder="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <button type="submit">Login</button>
+      </form>
+      {msg && <p>{msg}</p>}
+    </main>
+  );
+}
+
+src/app/page.tsx
+// Примечание: в SSR не дергаем localhost/relative fetch — читаем cookie и достаём пользователя напрямую.
+
+
+Примечание: `@/*` алиас в этом проекте настроен на `./src/*`, поэтому импорты вида `@/lib/...`.
+
+Шаг 9. Запусти и проверь
+
+Вариант A (по заданию, через docker compose):
+
+AUTH_SECRET="change_this_to_a_long_random_string" docker compose up --build
+
+Вариант B (локально без docker):
+
+pnpm dev
+
+
+Проверка:
+
+/auth/register → создал пользователя
+
+/auth/login → залогинился
+
+/api/auth/me → вернёт { user: { ... } }
+
+Шаг 10. Документация
+
+- `docs/ARCHITECTURE.md` — что за что отвечает (папки/файлы, потоки auth/db/docker)
+- `docs/BUILD_STEPS.md` — какие шаги мы делали (Next.js → auth/Mongo → Docker Compose → проверка)
+
+Шаг 11 . Теперь давай сделаем все по красоте
+Сделаем красивую страницу регистрации
+1. Удалим из БД моего юзера
+   Если база поднята через docker compose, удалить юзера можно так (подставь email):
+
+   docker compose exec mongo mongosh --quiet --eval 'db.getSiblingDB(\"cnpf_feeder\").users.deleteOne({ email: \"test@example.com\" })'
+
+   Или удалить всех пользователей (осторожно):
+   docker compose exec mongo mongosh --quiet --eval 'db.getSiblingDB(\"cnpf_feeder\").users.deleteMany({})'
+2. При создании Юзера мы должны указать 
+    1. Емеил (можем по нему логиниться)
+    2. Логин (никнейм) и можем тоже по нему логинится
+    3. Пароль
+    4. Повтерине пароля
+    5. Аватар (поле не обязательно)
+    6. Грамотная и взрослая валидация этих полей
+3. Первый зарегестрированный пользователь - это Админ 
+4. Создаем компонент Хэдр и делаем все по красоте (стили современные и цвета кнопок) 
+5. В Компоненте Хэдр
+   1. Если пользовтаель не залогинен отображаем Две кнопки: Войти и Регистация
+   2. Если пользователь залогинен отображаем кнопку Выйти, Аватар пользователя и никнейм отображаем кнопку настройки (или как лучше) где мы можем поменять Автаар Никнейм или пароль
+   3. Если пользователь Админ, то отображаем кнопку Добавить Админа при нажатии которой у нас открывается список зарегистрованных пользователй у кооторых отображаются их данные (кроме пароля) и чек бокс- сделать адиином или уборать из админов
+
+Пока такой флоу! Понял ? 
+
+Шаг 12. Лента “Вести с водоёмов, отчёты” + админка (навигация) + соревнования (скелет)
+
+Цель: сделать MVP “соц-ленты” отчётов и начать структуру админки как у настоящего приложения.
+
+12.1. Админка: навигация/разделы
+- В админке делаем header/навигацию (внутри `/admin`):
+  1) Пользователи (уже есть)
+  2) Вести с водоёмов, отчёты
+  3) Соревнования
+  4) Добавить блок (пока заглушка)
+  5) Настройки сайта (пока заглушка)
+
+12.2. Отчёты (“Вести с водоёмов, отчёты”)
+- На главной странице делаем красивый центральный блок:
+  - заголовок: “Вести с водоёмов, отчёты”
+  - кнопка: “Добавить отчёт”
+- При нажатии “Добавить отчёт” открывается большой pop-up:
+  - заголовок отчёта
+  - текст отчёта
+  - фото (до 10 штук)
+  - список загруженных фото с возможностью удалить
+  - сохранить
+- Отображение:
+  - после сохранения отчёт появляется в ленте красиво (карточки/время/аватар автора/фото)
+  - редактирование отчёта доступно только автору (и админу) — через тот же pop-up
+
+12.3. Соревнования (первый скелет)
+- В админке админ создаёт соревнование через pop-up:
+  - название соревнования
+  - название команды (если командный зачёт)
+  - чекбокс “Личный зачёт” — если включен, команда не нужна
+  - список участников:
+    - если команда — несколько участников
+    - если личный зачёт — один участник
+
+Примечание: делаем UI красиво и современно, через `styled-components` (у компонентов `.styles.ts` рядом).
