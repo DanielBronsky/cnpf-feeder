@@ -10,7 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "compose:up": "AUTH_SECRET=change_this_to_a_long_random_string docker compose up --build --force-recreate -d",
     "compose:down": "docker compose down",
     "compose:logs": "docker compose logs -f --tail=100",
