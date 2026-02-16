@@ -6,6 +6,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useMutation } from '@apollo/client';
+
+import { ADMIN_USERS_QUERY } from '@/lib/graphql/queries';
+import { ADMIN_UPDATE_USER_MUTATION, ADMIN_DELETE_USER_MUTATION } from '@/lib/graphql/mutations';
 
 type UserRow = {
   id: string;
@@ -17,44 +21,61 @@ type UserRow = {
 };
 
 export function AdminUsersClient() {
-  const [rows, setRows] = useState<UserRow[]>([]);
   const [err, setErr] = useState<string>('');
-  const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
 
+  const { data, loading, error, refetch } = useQuery(ADMIN_USERS_QUERY);
+  const [updateUserMutation] = useMutation(ADMIN_UPDATE_USER_MUTATION, {
+    refetchQueries: [{ query: ADMIN_USERS_QUERY }],
+  });
+  const [deleteUserMutation] = useMutation(ADMIN_DELETE_USER_MUTATION, {
+    refetchQueries: [{ query: ADMIN_USERS_QUERY }],
+  });
+
+  const rows: UserRow[] = data?.adminUsers || [];
   const adminsCount = useMemo(() => rows.filter((r) => r.isAdmin).length, [rows]);
 
-  async function load() {
-    setErr('');
-    setLoading(true);
-    try {
-      const r = await fetch('/api/admin/users', { cache: 'no-store' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to load');
-      setRows(data.users ?? []);
-    } catch (e: any) {
-      setErr(e?.message ?? 'Error');
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // Handle error from useQuery - use useEffect to avoid calling setState during render
   useEffect(() => {
-    void load();
-  }, []);
+    if (error) {
+      setErr(error.message);
+    }
+  }, [error]);
 
   async function toggleAdmin(userId: string, next: boolean) {
     setErr('');
     setSavingId(userId);
     try {
-      const r = await fetch(`/api/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ isAdmin: next }),
+      const { errors } = await updateUserMutation({
+        variables: {
+          id: userId,
+          isAdmin: next,
+        },
       });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to update');
-      setRows((prev) => prev.map((u) => (u.id === userId ? { ...u, isAdmin: next } : u)));
+      
+      if (errors) {
+        throw new Error(errors[0]?.message ?? 'Failed to update');
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? 'Error');
+    } finally {
+      setSavingId(null);
+    }
+  }
+  
+  async function deleteUser(userId: string) {
+    if (!confirm('Удалить пользователя?')) return;
+    
+    setErr('');
+    setSavingId(userId);
+    try {
+      const { errors } = await deleteUserMutation({
+        variables: { id: userId },
+      });
+      
+      if (errors) {
+        throw new Error(errors[0]?.message ?? 'Failed to delete');
+      }
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
     } finally {
@@ -136,7 +157,7 @@ export function AdminUsersClient() {
       </div>
 
       <div style={{ display: 'flex', gap: 12 }}>
-        <button type="button" onClick={load}>
+        <button type="button" onClick={() => refetch()}>
           Обновить список
         </button>
       </div>

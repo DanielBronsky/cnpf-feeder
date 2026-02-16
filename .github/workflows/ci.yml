@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  # --- Линт, сборка, тесты ---
+  check:
+    name: Lint & build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Build
+        run: yarn build
+        env:
+          # Минимальные переменные для сборки (подставь свои если нужно)
+          NEXT_PUBLIC_GRAPHQL_URL: https://placeholder/graphql
+          AUTH_SECRET: ci-placeholder-secret-for-build-only
+
+  # --- Docker build (проверка образа) ---
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: cnpf-feeder-frontend:ci
+          build-args: |
+            NEXT_PUBLIC_GRAPHQL_URL=https://placeholder/graphql
+            AUTH_SECRET=ci-placeholder
+
+  # --- Placeholder для PDP: deploy (раскомментировать когда хостинг готов) ---
+  # deploy-pdp:
+  #   name: Deploy PDP
+  #   needs: [check, docker]
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #     # Варианты деплоя:
+  #     # 1. Vercel: vercel deploy --prod (нужен VERCEL_TOKEN)
+  #     # 2. Railway: railway up (нужен RAILWAY_TOKEN)
+  #     # 3. SSH на VPS: scp + docker compose

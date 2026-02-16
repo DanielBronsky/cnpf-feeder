@@ -4,6 +4,10 @@
  */
 import { useState } from 'react';
 import styled from 'styled-components';
+import { RegistrationModal } from './RegistrationModal';
+import { ParticipantsModal } from './ParticipantsModal';
+import { useQuery } from '@apollo/client';
+import { ME_QUERY } from '@/lib/graphql/queries';
 
 const Card = styled.article`
   border-radius: 18px;
@@ -295,6 +299,57 @@ const RegulationsText = styled.div`
   border: 1px solid var(--border-soft);
 `;
 
+const Actions = styled.div`
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-soft);
+`;
+
+const ActionButton = styled.button`
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 14px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: linear-gradient(
+    135deg,
+    rgba(99, 102, 241, 0.15) 0%,
+    rgba(139, 92, 246, 0.15) 100%
+  );
+  color: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+
+  &:hover {
+    background: linear-gradient(
+      135deg,
+      rgba(99, 102, 241, 0.25) 0%,
+      rgba(139, 92, 246, 0.25) 100%
+    );
+    border-color: rgba(99, 102, 241, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+`;
+
+const SecondaryButton = styled(ActionButton)`
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--border-soft);
+  }
+`;
+
 type CompetitionCardProps = {
   competition: {
     id: string;
@@ -381,6 +436,10 @@ function formatDateTime(date: string, time: string): string {
 
 export function CompetitionCard({ competition }: CompetitionCardProps) {
   const [isRegulationsOpen, setIsRegulationsOpen] = useState(false);
+  const [isRegistrationModalOpen, setIsRegistrationModalOpen] = useState(false);
+  const [isParticipantsModalOpen, setIsParticipantsModalOpen] = useState(false);
+  const { data: meData } = useQuery(ME_QUERY);
+  const isAuthenticated = !!meData?.me;
 
   return (
     <Card>
@@ -493,6 +552,47 @@ export function CompetitionCard({ competition }: CompetitionCardProps) {
           </RegulationsContent>
         </Regulations>
       ) : null}
+
+      <Actions>
+        {isAuthenticated && (
+          <ActionButton
+            type="button"
+            onClick={() => setIsRegistrationModalOpen(true)}
+          >
+            Регистрация
+          </ActionButton>
+        )}
+        <SecondaryButton
+          type="button"
+          onClick={() => setIsParticipantsModalOpen(true)}
+        >
+          Участники
+        </SecondaryButton>
+      </Actions>
+
+      {isRegistrationModalOpen && (
+        <RegistrationModal
+          competitionId={competition.id}
+          competitionTitle={competition.title}
+          individualFormat={competition.individualFormat}
+          teamFormat={competition.teamFormat}
+          onClose={() => setIsRegistrationModalOpen(false)}
+          onSuccess={() => {
+            // Refresh participants list if modal is open
+            if (isParticipantsModalOpen) {
+              // The ParticipantsModal will refetch on its own
+            }
+          }}
+        />
+      )}
+
+      {isParticipantsModalOpen && (
+        <ParticipantsModal
+          competitionId={competition.id}
+          competitionTitle={competition.title}
+          onClose={() => setIsParticipantsModalOpen(false)}
+        />
+      )}
     </Card>
   );
 }

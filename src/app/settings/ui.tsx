@@ -7,7 +7,12 @@
  */
 
 import { useMemo, useRef, useState } from 'react';
+import { useMutation } from '@apollo/client';
 
+import {
+  UPDATE_PROFILE_MUTATION,
+  UPDATE_PASSWORD_MUTATION,
+} from '@/lib/graphql/mutations';
 import {
   AvatarCropper,
   type AvatarCropperHandle,
@@ -51,8 +56,13 @@ export function SettingsClient({ initialUser }: { initialUser: InitialUser }) {
   const [pwErrNew, setPwErrNew] = useState('');
   const [pwErrConfirm, setPwErrConfirm] = useState('');
 
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [savingPassword, setSavingPassword] = useState(false);
+  const [updateProfileMutation, { loading: savingProfile }] = useMutation(
+    UPDATE_PROFILE_MUTATION,
+  );
+  const [updatePasswordMutation, { loading: savingPassword }] = useMutation(
+    UPDATE_PASSWORD_MUTATION,
+  );
+
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
 
@@ -82,30 +92,46 @@ export function SettingsClient({ initialUser }: { initialUser: InitialUser }) {
       return;
     }
 
-    setSavingProfile(true);
-
     try {
-      const fd = new FormData();
-      fd.set('username', normalizedUsername);
-      fd.set('removeAvatar', removeAvatar ? '1' : '0');
+      // Note: Avatar upload not supported in GraphQL yet, using REST for now
       if (avatarBlob) {
+        // Fallback to REST for file upload
+        const fd = new FormData();
+        fd.set('username', normalizedUsername);
+        fd.set('removeAvatar', removeAvatar ? '1' : '0');
         fd.set(
           'avatar',
           new File([avatarBlob], 'avatar.jpg', {
             type: avatarBlob.type || 'image/jpeg',
           }),
         );
-      }
 
-      const r = await fetch('/api/user/me', { method: 'PATCH', body: fd });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Error');
-      setOk('Профиль обновлён');
-      window.location.reload();
+        const r = await fetch('/api/user/me', { method: 'PATCH', body: fd });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data?.error ?? 'Error');
+        setOk('Профиль обновлён');
+        window.location.reload();
+      } else {
+        // Use GraphQL for username/removeAvatar
+        const { errors } = await updateProfileMutation({
+          variables: {
+            input: {
+              username: usernameChanged ? normalizedUsername : undefined,
+              removeAvatar:
+                removeAvatar && initialUser.hasAvatar ? true : undefined,
+            },
+          },
+        });
+
+        if (errors) {
+          throw new Error(errors[0]?.message ?? 'Error');
+        }
+
+        setOk('Профиль обновлён');
+        window.location.reload();
+      }
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
-    } finally {
-      setSavingProfile(false);
     }
   }
 
@@ -136,27 +162,24 @@ export function SettingsClient({ initialUser }: { initialUser: InitialUser }) {
       return;
     }
 
-    setSavingPassword(true);
     try {
-      const r = await fetch('/api/user/me/password', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          currentPassword: pwCurrent,
+      const { errors } = await updatePasswordMutation({
+        variables: {
+          oldPassword: pwCurrent,
           newPassword: pwNew,
-          newPasswordConfirm: pwConfirm,
-        }),
+        },
       });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Error');
+
+      if (errors) {
+        throw new Error(errors[0]?.message ?? 'Error');
+      }
+
       setOk('Пароль обновлён');
       setPwCurrent('');
       setPwNew('');
       setPwConfirm('');
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
-    } finally {
-      setSavingPassword(false);
     }
   }
 

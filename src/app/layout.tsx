@@ -7,6 +7,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { Header } from '@/components/Header/Header';
 import { StyledComponentsRegistry } from '@/lib/StyledComponentsRegistry';
+import { ApolloProviderWrapper } from '@/lib/apollo-provider';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -38,10 +39,12 @@ export default function RootLayout({
     <html lang='en'>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <StyledComponentsRegistry>
-          <>
-            <Header />
-            {children}
-          </>
+          <ApolloProviderWrapper>
+            <>
+              <Header />
+              {children}
+            </>
+          </ApolloProviderWrapper>
         </StyledComponentsRegistry>
       </body>
     </html>

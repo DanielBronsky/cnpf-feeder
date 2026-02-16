@@ -6,6 +6,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useMutation } from '@apollo/client';
+
+import { REPORTS_QUERY, REPORT_QUERY } from '@/lib/graphql/queries';
+import { UPDATE_REPORT_MUTATION, DELETE_REPORT_MUTATION } from '@/lib/graphql/mutations';
 
 import {
   CloseButton,
@@ -72,11 +76,31 @@ function fmtDate(iso?: string) {
 export function AdminReportsClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [rows, setRows] = useState<Report[]>([]);
   const [err, setErr] = useState<string>('');
   const [ok, setOk] = useState<string>('');
-  const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  
+  // GraphQL queries
+  const { data, loading, error, refetch } = useQuery(REPORTS_QUERY, {
+    variables: { limit: 100 },
+  });
+  
+  const rows: Report[] = data?.reports || [];
+  
+  const [updateReportMutation] = useMutation(UPDATE_REPORT_MUTATION, {
+    refetchQueries: [{ query: REPORTS_QUERY, variables: { limit: 100 } }],
+  });
+  
+  const [deleteReportMutation] = useMutation(DELETE_REPORT_MUTATION, {
+    refetchQueries: [{ query: REPORTS_QUERY, variables: { limit: 100 } }],
+  });
+  
+  // Handle error from useQuery - use useEffect to avoid calling setState during render
+  useEffect(() => {
+    if (error) {
+      setErr(error.message);
+    }
+  }, [error]);
 
   // modal
   const [open, setOpen] = useState(false);
@@ -98,47 +122,21 @@ export function AdminReportsClient() {
     };
   }, [newPreviews]);
 
-  async function load() {
-    setErr('');
-    setOk('');
-    setLoading(true);
-    try {
-      const r = await fetch('/api/reports?limit=100', { cache: 'no-store' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to load');
-      setRows(data.reports ?? []);
-    } catch (e: any) {
-      setErr(e?.message ?? 'Error');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
+  // Data is loaded via useQuery hook
 
   async function openEdit(report: Report) {
     setOk('');
     setErr('');
     setTitleErr('');
     setTextErr('');
-    try {
-      const r = await fetch(`/api/reports/${report.id}`, { cache: 'no-store' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to load report');
-      const rep = data.report as any;
-      setEditing(report);
-      setTitle(String(rep.title ?? ''));
-      setText(String(rep.text ?? ''));
-      const photos = rep.photos || [];
-      setExistingPhotos(photos.map((p: any, idx: number) => ({ url: p.url, idx })));
-      setRemovedIdx(new Set());
-      setNewFiles([]);
-      setOpen(true);
-    } catch (e: any) {
-      setErr(e?.message ?? 'Error');
-    }
+    // Use data from cache (already loaded via REPORTS_QUERY)
+    setEditing(report);
+    setTitle(report.title);
+    setText(report.text);
+    setExistingPhotos(report.photos.map((p, idx) => ({ url: p.url, idx })));
+    setRemovedIdx(new Set());
+    setNewFiles([]);
+    setOpen(true);
   }
 
   function closeModal() {
@@ -215,22 +213,44 @@ export function AdminReportsClient() {
     if (!editing) return;
 
     try {
-      const fd = new FormData();
-      fd.set('title', t);
-      fd.set('text', body);
-      removedIdx.forEach((i) => fd.append('removePhoto', String(i)));
-      newFiles.forEach((f) => fd.append('photos', f));
-
-      const r = await fetch(`/api/reports/${editing.id}`, {
-        method: 'PATCH',
-        body: fd,
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Error');
+      // Note: Photo upload not supported in GraphQL yet, using REST for now
+      if (newFiles.length > 0) {
+        // Fallback to REST for file upload
+        const fd = new FormData();
+        fd.set('title', t);
+        fd.set('text', body);
+        removedIdx.forEach((i) => fd.append('removePhoto', String(i)));
+        newFiles.forEach((f) => fd.append('photos', f));
+        
+        const r = await fetch(`/api/reports/${editing.id}`, {
+          method: 'PATCH',
+          body: fd,
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data?.error ?? 'Error');
+      } else {
+        // Use GraphQL for text updates
+        const removePhoto = Array.from(removedIdx);
+        const { errors } = await updateReportMutation({
+          variables: {
+            id: editing.id,
+            input: {
+              title: t,
+              text: body,
+              removePhoto: removePhoto.length > 0 ? removePhoto : undefined,
+              removeAllPhotos: existingPhotos.length === removedIdx.size ? true : undefined,
+            },
+          },
+        });
+        
+        if (errors) {
+          throw new Error(errors[0]?.message ?? 'Error');
+        }
+      }
 
       setOk('Отчёт обновлён');
       closeModal();
-      await load();
+      await refetch();
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
     }
@@ -242,11 +262,16 @@ export function AdminReportsClient() {
     setOk('');
     setDeletingId(id);
     try {
-      const r = await fetch(`/api/reports/${id}`, { method: 'DELETE' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to delete');
+      const { errors } = await deleteReportMutation({
+        variables: { id },
+      });
+      
+      if (errors) {
+        throw new Error(errors[0]?.message ?? 'Failed to delete');
+      }
+      
       setOk('Отчёт удалён');
-      await load();
+      await refetch();
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
     } finally {
@@ -307,7 +332,7 @@ export function AdminReportsClient() {
       </AdminTableWrapper>
 
       <AdminRefreshButtonContainer>
-        <button type="button" onClick={load}>
+        <button type="button" onClick={() => refetch()}>
           Обновить список
         </button>
       </AdminRefreshButtonContainer>

@@ -6,8 +6,10 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci
+# Install npm dependencies
+# Используем --legacy-peer-deps для совместимости с apollo-upload-client@17
+COPY package.json package-lock.json* ./
+RUN npm install --legacy-peer-deps
 
 
 FROM node:22-alpine AS builder
@@ -16,6 +18,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Build-time args (опционально для CI; при docker compose используют .env)
+ARG NEXT_PUBLIC_GRAPHQL_URL=http://localhost:4000/graphql
+ARG AUTH_SECRET=build-placeholder
+ENV NEXT_PUBLIC_GRAPHQL_URL=$NEXT_PUBLIC_GRAPHQL_URL
+ENV AUTH_SECRET=$AUTH_SECRET
 ENV NODE_ENV=production
 RUN npm run build
 

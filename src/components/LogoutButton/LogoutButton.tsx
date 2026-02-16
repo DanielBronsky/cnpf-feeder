@@ -2,22 +2,37 @@
 
 /**
  * src/components/LogoutButton.tsx
- * Кнопка выхода: вызывает POST `/api/auth/logout`, затем делает reload/redirect.
+ * Кнопка выхода: вызывает GraphQL mutation logout, затем делает reload/redirect.
  */
 
-import { useState } from 'react';
+import { startTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMutation, useApolloClient } from '@apollo/client';
+import { LOGOUT_MUTATION } from '@/lib/graphql/mutations';
 import { Button } from './LogoutButton.styles';
 
 export function LogoutButton() {
-  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const client = useApolloClient();
+  const [logoutMutation, { loading }] = useMutation(LOGOUT_MUTATION);
 
   async function onLogout() {
-    setLoading(true);
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      window.location.href = '/';
-    } finally {
-      setLoading(false);
+      await logoutMutation();
+      // Очищаем кэш Apollo Client перед редиректом
+      await client.clearStore();
+      // Используем startTransition для отложенного обновления состояния и избежания проблем с гидратацией
+      startTransition(() => {
+        router.push('/');
+        router.refresh();
+      });
+    } catch (error) {
+      // Even if logout fails, clear cache and redirect
+      await client.clearStore().catch(() => {});
+      startTransition(() => {
+        router.push('/');
+        router.refresh();
+      });
     }
   }
 

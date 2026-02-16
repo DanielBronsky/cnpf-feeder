@@ -8,6 +8,10 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery, useMutation } from '@apollo/client';
+
+import { REPORTS_QUERY, REPORT_QUERY, COMPETITIONS_QUERY } from '@/lib/graphql/queries';
+import { CREATE_REPORT_MUTATION, UPDATE_REPORT_MUTATION, DELETE_REPORT_MUTATION } from '@/lib/graphql/mutations';
 
 import {
   Actions,
@@ -98,19 +102,44 @@ export function FeedClient({
   me,
   showAll = false,
   limit,
+  showCompetitions = false,
 }: {
   me: Me;
   showAll?: boolean;
   limit?: number;
+  showCompetitions?: boolean;
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [items, setItems] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
-  const [competitions, setCompetitions] = useState<any[]>([]);
+  
+  // GraphQL queries
+  const { data: reportsData, loading: reportsLoading, error: reportsError, refetch: refetchReports } = useQuery(REPORTS_QUERY, {
+    variables: { limit: limit || undefined },
+    skip: false,
+    errorPolicy: 'all', // Продолжать работу даже при ошибках
+    fetchPolicy: 'cache-and-network', // Использовать кэш и обновлять из сети
+  });
+  
+  // Handle error from useQuery - use useEffect to avoid calling setState during render
+  useEffect(() => {
+    if (reportsError) {
+      setErr(reportsError.message);
+    }
+    // Не очищаем ошибку автоматически - это может вызывать проблемы с гидратацией
+    // Ошибка будет очищена пользователем или при следующем успешном действии
+  }, [reportsError]);
+  
+  const items: Report[] = reportsData?.reports || [];
+  const loading = reportsLoading;
+
+  // Load competitions if needed
+  const { data: competitionsData } = useQuery(COMPETITIONS_QUERY, {
+    skip: !showCompetitions,
+  });
+  const competitions = competitionsData?.competitions || [];
 
   // photo viewer modal
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -142,39 +171,19 @@ export function FeedClient({
     };
   }, [newPreviews]);
 
-  async function load() {
-    setErr('');
-    setOk('');
-    setLoading(true);
-    try {
-      const url = limit ? `/api/reports?limit=${limit}` : '/api/reports';
-      const r = await fetch(url, { cache: 'no-store' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to load');
-      setItems(data.reports ?? []);
-    } catch (e: any) {
-      setErr(e?.message ?? 'Error');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadCompetitions() {
-    try {
-      const r = await fetch('/api/competitions', { cache: 'no-store' });
-      const data = await r.json().catch(() => ({}));
-      if (r.ok) {
-        setCompetitions(data.competitions ?? []);
-      }
-    } catch (e: any) {
-      // Игнорируем ошибки загрузки соревнований
-    }
-  }
-
-  useEffect(() => {
-    void load();
-    void loadCompetitions();
-  }, []);
+  // GraphQL mutations
+  const [createReportMutation] = useMutation(CREATE_REPORT_MUTATION, {
+    refetchQueries: [{ query: REPORTS_QUERY, variables: { limit: limit || undefined } }],
+  });
+  
+  const [updateReportMutation] = useMutation(UPDATE_REPORT_MUTATION, {
+    refetchQueries: [{ query: REPORTS_QUERY, variables: { limit: limit || undefined } }],
+  });
+  
+  const [deleteReportMutation] = useMutation(DELETE_REPORT_MUTATION, {
+    refetchQueries: [{ query: REPORTS_QUERY, variables: { limit: limit || undefined } }],
+  });
+  
 
   function openCreate() {
     if (!me) {
@@ -200,24 +209,42 @@ export function FeedClient({
     setTitleErr('');
     setTextErr('');
     try {
-      const r = await fetch(`/api/reports/${id}`, { cache: 'no-store' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to load report');
-      const rep = data.report as any;
+      // Try to get from cache first
       const fromList = items.find((x) => x.id === id) ?? null;
-      setEditing(fromList);
-      setTitle(String(rep.title ?? ''));
-      setText(String(rep.text ?? ''));
-      const photos = rep.photos || [];
-      setExistingPhotos(
-        photos.map((p: any, idx: number) => ({
-          url: p.url,
-          idx,
-        })),
-      );
-      setRemovedIdx(new Set());
-      setNewFiles([]);
-      setOpen(true);
+      if (fromList) {
+        setEditing(fromList);
+        setTitle(fromList.title);
+        setText(fromList.text);
+        setExistingPhotos(
+          fromList.photos.map((p, idx) => ({
+            url: p.url,
+            idx,
+          })),
+        );
+        setRemovedIdx(new Set());
+        setNewFiles([]);
+        setOpen(true);
+      } else {
+        // If not in cache, fetch it
+        // Note: For now using REST, can be updated to use REPORT_QUERY
+        const r = await fetch(`/api/reports/${id}`, { cache: 'no-store' });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data?.error ?? 'Failed to load report');
+        const rep = data.report as any;
+        setEditing({ id, ...rep } as Report);
+        setTitle(String(rep.title ?? ''));
+        setText(String(rep.text ?? ''));
+        const photos = rep.photos || [];
+        setExistingPhotos(
+          photos.map((p: any, idx: number) => ({
+            url: p.url,
+            idx,
+          })),
+        );
+        setRemovedIdx(new Set());
+        setNewFiles([]);
+        setOpen(true);
+      }
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
     }
@@ -291,25 +318,62 @@ export function FeedClient({
     if (bad) return;
 
     try {
-      const fd = new FormData();
-      fd.set('title', t);
-      fd.set('text', body);
-      removedIdx.forEach((i) => fd.append('removePhoto', String(i)));
-      newFiles.forEach((f) => fd.append('photos', f));
-
-      const r = await fetch(
-        editing ? `/api/reports/${editing.id}` : '/api/reports',
-        {
-          method: editing ? 'PATCH' : 'POST',
-          body: fd,
-        },
-      );
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Error');
-
-      setOk(editing ? 'Отчёт обновлён' : 'Отчёт добавлен');
+      if (editing) {
+        // Update report
+        const removePhoto = Array.from(removedIdx);
+        const { errors } = await updateReportMutation({
+          variables: {
+            id: editing.id,
+            input: {
+              title: t,
+              text: body,
+              removePhoto: removePhoto.length > 0 ? removePhoto : undefined,
+              removeAllPhotos: remainingExisting === 0 && newFiles.length === 0 ? true : undefined,
+            },
+          },
+        });
+        
+        if (errors) {
+          throw new Error(errors[0]?.message ?? 'Error');
+        }
+        
+        setOk('Отчёт обновлён');
+      } else {
+        // Create report
+        // Note: Photo upload not supported in GraphQL yet, using REST for now
+        if (newFiles.length > 0) {
+          // Fallback to REST for file upload
+          const fd = new FormData();
+          fd.set('title', t);
+          fd.set('text', body);
+          newFiles.forEach((f) => fd.append('photos', f));
+          
+          const r = await fetch('/api/reports', {
+            method: 'POST',
+            body: fd,
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(data?.error ?? 'Error');
+        } else {
+          const { errors } = await createReportMutation({
+            variables: {
+              input: {
+                title: t,
+                text: body,
+              },
+            },
+          });
+          
+          if (errors) {
+            throw new Error(errors[0]?.message ?? 'Error');
+          }
+        }
+        
+        setOk('Отчёт добавлен');
+      }
+      
       closeModal();
-      await load();
+      await refetchReports();
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
     }
@@ -319,11 +383,16 @@ export function FeedClient({
     setErr('');
     setOk('');
     try {
-      const r = await fetch(`/api/reports/${id}`, { method: 'DELETE' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to delete');
+      const { errors } = await deleteReportMutation({
+        variables: { id },
+      });
+      
+      if (errors) {
+        throw new Error(errors[0]?.message ?? 'Failed to delete');
+      }
+      
       setOk('Отчёт удалён');
-      await load();
+      await refetchReports();
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
     }
@@ -462,9 +531,12 @@ export function FeedClient({
             <MoreReportsCard onMoreClick={() => router.push('/feed')} />
           ) : null}
 
-          <Divider />
-
-          <CompetitionsSection competitions={competitions} />
+          {showCompetitions && competitions.length > 0 && (
+            <>
+              <Divider />
+              <CompetitionsSection competitions={competitions} />
+            </>
+          )}
         </>
       ) : null}
 

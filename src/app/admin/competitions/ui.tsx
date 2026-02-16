@@ -6,6 +6,10 @@
  */
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useQuery, useMutation } from '@apollo/client';
+
+import { COMPETITIONS_QUERY } from '@/lib/graphql/queries';
+import { CREATE_COMPETITION_MUTATION, UPDATE_COMPETITION_MUTATION, DELETE_COMPETITION_MUTATION } from '@/lib/graphql/mutations';
 import {
   CloseButton,
   FieldError,
@@ -90,13 +94,34 @@ type Competition = {
 };
 
 export function AdminCompetitionsClient() {
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [openRegulations, setOpenRegulations] = useState<Record<string, boolean>>({});
+  
+  // GraphQL queries
+  const { data, loading, error, refetch } = useQuery(COMPETITIONS_QUERY);
+  const competitions: Competition[] = data?.competitions || [];
+  
+  const [createCompetitionMutation] = useMutation(CREATE_COMPETITION_MUTATION, {
+    refetchQueries: [{ query: COMPETITIONS_QUERY }],
+  });
+  
+  const [updateCompetitionMutation] = useMutation(UPDATE_COMPETITION_MUTATION, {
+    refetchQueries: [{ query: COMPETITIONS_QUERY }],
+  });
+  
+  const [deleteCompetitionMutation] = useMutation(DELETE_COMPETITION_MUTATION, {
+    refetchQueries: [{ query: COMPETITIONS_QUERY }],
+  });
+  
+  // Handle error from useQuery - use useEffect to avoid calling setState during render
+  useEffect(() => {
+    if (error) {
+      setErr(error.message);
+    }
+  }, [error]);
 
   // Form fields
   const [title, setTitle] = useState('');
@@ -188,24 +213,7 @@ export function AdminCompetitionsClient() {
     return `${day} ${month} ${year}${timeStr}`;
   }
 
-  async function loadCompetitions() {
-    setLoading(true);
-    setErr('');
-    try {
-      const r = await fetch('/api/competitions', { cache: 'no-store' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Failed to load');
-      setCompetitions(data.competitions ?? []);
-    } catch (e: any) {
-      setErr(e?.message ?? 'Ошибка загрузки');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadCompetitions();
-  }, []);
+  // Data is loaded via useQuery hook
 
   function openCreate() {
     setEditingId(null);
@@ -336,50 +344,61 @@ export function AdminCompetitionsClient() {
       setErr('');
       setOk('');
       
-      console.log('Sending request to /api/competitions');
-
-      const url = editingId ? `/api/competitions/${editingId}` : '/api/competitions';
-      const method = editingId ? 'PATCH' : 'POST';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title,
-          startDate,
-          endDate,
-          location,
-          tours: validTours,
-          openingDate,
-          openingTime,
-          individualFormat,
-          teamFormat,
-          fee,
-          teamLimit,
-          regulations,
-        }),
-      });
-
-      const data = await response.json().catch(() => ({}));
+      // Format dates for GraphQL (ISO 8601)
+      const formatDateForGraphQL = (dateStr: string) => {
+        if (!dateStr) return undefined;
+        return new Date(dateStr).toISOString();
+      };
       
-      console.log('Response:', { ok: response.ok, status: response.status, data });
+      const input = {
+        title: title.trim(),
+        startDate: formatDateForGraphQL(startDate)!,
+        endDate: formatDateForGraphQL(endDate)!,
+        location: location.trim(),
+        tours: validTours.map(t => ({
+          date: formatDateForGraphQL(t.date)!,
+          time: t.time,
+        })),
+        openingDate: openingDate ? formatDateForGraphQL(openingDate) : undefined,
+        openingTime: openingTime || undefined,
+        individualFormat,
+        teamFormat,
+        fee: fee || undefined,
+        teamLimit: teamLimit || undefined,
+        regulations: regulations.trim() || undefined,
+      };
 
-      if (!response.ok) {
-        const errorMsg = data?.error ?? 'Ошибка при создании соревнования';
-        console.error('Error response:', errorMsg, data);
-        throw new Error(errorMsg);
+      if (editingId) {
+        const { errors } = await updateCompetitionMutation({
+          variables: {
+            id: editingId,
+            input,
+          },
+        });
+        
+        if (errors) {
+          throw new Error(errors[0]?.message ?? 'Ошибка при обновлении соревнования');
+        }
+        
+        setOk('Соревнование успешно обновлено');
+      } else {
+        const { errors } = await createCompetitionMutation({
+          variables: { input },
+        });
+        
+        if (errors) {
+          throw new Error(errors[0]?.message ?? 'Ошибка при создании соревнования');
+        }
+        
+        setOk('Соревнование успешно создано');
       }
-
-      console.log('Success!');
-      setOk(editingId ? 'Соревнование успешно обновлено' : 'Соревнование успешно создано');
-      await loadCompetitions();
+      
+      await refetch();
       setTimeout(() => {
         closeModal();
       }, 1000);
     } catch (e: any) {
-      setErr(e?.message ?? 'Ошибка при создании соревнования');
+      setErr(e?.message ?? 'Ошибка при сохранении соревнования');
     }
   }
 
@@ -653,10 +672,15 @@ export function AdminCompetitionsClient() {
     if (!confirm('Вы уверены, что хотите удалить это соревнование?')) return;
 
     try {
-      const r = await fetch(`/api/competitions/${id}`, { method: 'DELETE' });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error ?? 'Ошибка удаления');
-      await loadCompetitions();
+      const { errors } = await deleteCompetitionMutation({
+        variables: { id },
+      });
+      
+      if (errors) {
+        throw new Error(errors[0]?.message ?? 'Ошибка удаления');
+      }
+      
+      await refetch();
     } catch (e: any) {
       setErr(e?.message ?? 'Ошибка удаления');
     }

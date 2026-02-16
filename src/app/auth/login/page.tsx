@@ -4,10 +4,12 @@
  * /auth/login
  * Простая форма логина: отправляет POST на `/api/auth/login`.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMutation, useApolloClient } from '@apollo/client';
 
+import { LOGIN_MUTATION } from '@/lib/graphql/mutations';
 import {
   Actions,
   Card,
@@ -25,10 +27,11 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
+  const client = useApolloClient();
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [msg, setMsg] = useState<string>('');
-  const [loading, setLoading] = useState(false);
+  const [loginMutation, { loading }] = useMutation(LOGIN_MUTATION);
 
   function onClose() {
     router.push('/');
@@ -46,20 +49,56 @@ export default function LoginPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMsg('');
-    setLoading(true);
 
     try {
-      const r = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ login, password }),
+      const { data, errors } = await loginMutation({
+        variables: {
+          input: { login, password },
+        },
       });
 
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) setMsg(data?.error ?? 'Error');
-      else window.location.href = '/';
-    } finally {
-      setLoading(false);
+      if (errors) {
+        setMsg(errors[0]?.message ?? 'Ошибка');
+        return;
+      }
+
+      if (data?.login?.ok && data?.login?.token) {
+        // Устанавливаем cookie через Frontend API route
+        // Это необходимо, так как cookie от Backend (localhost:4000) не доступна для Frontend (localhost:3000)
+        try {
+          console.log('Setting cookie with token:', data.login.token.substring(0, 20) + '...');
+          const cookieResponse = await fetch('/api/auth/set-cookie', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: data.login.token }),
+            credentials: 'include',
+          });
+          
+          if (!cookieResponse.ok) {
+            const errorData = await cookieResponse.json().catch(() => ({ error: 'Unknown error' }));
+            console.error('Failed to set cookie:', errorData);
+            setMsg('Ошибка установки cookie: ' + (errorData.error || 'Unknown error'));
+            return;
+          }
+          
+          console.log('Cookie set successfully, redirecting...');
+          // Очищаем кэш Apollo Client перед редиректом
+          await client.clearStore().catch(() => {});
+          // Используем startTransition для отложенного обновления состояния и избежания проблем с гидратацией
+          startTransition(() => {
+            router.push('/');
+            router.refresh();
+          });
+        } catch (cookieError) {
+          console.error('Failed to set cookie:', cookieError);
+          setMsg('Ошибка установки cookie');
+        }
+      } else {
+        console.error('Login failed - no token:', data);
+        setMsg('Ошибка входа: токен не получен');
+      }
+    } catch (error: any) {
+      setMsg(error?.message ?? 'Ошибка');
     }
   }
 

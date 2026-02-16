@@ -1,5 +1,5 @@
 # docker-compose.yml
-# Поднимает два сервиса: `web` (Next.js приложение с API routes) и `mongo` (MongoDB для локальной разработки/демо).
+# Поднимает три сервиса: backend (Go GraphQL API), frontend (Next.js), mongo (MongoDB)
 services:
   mongo:
     image: mongo:7
@@ -8,22 +8,48 @@ services:
       - mongo_data:/data/db
     ports:
       - "27017:27017"
+    networks:
+      - cnpf-network
 
-  web:
+  backend:
     build:
-      context: .
+      context: ../cnpf-feeder-backend
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       - mongo
     ports:
-      - "3000:3000"
+      - "4000:4000"
     environment:
-      # По умолчанию используем локальную MongoDB из docker-compose.
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/cnpf_feeder}
       AUTH_SECRET: ${AUTH_SECRET:-change_this_to_a_long_random_string}
+      GOOGLE_GEMINI_API_KEY: ${GOOGLE_GEMINI_API_KEY:-}
+      PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      GIN_MODE: ${GIN_MODE:-debug}
+    networks:
+      - cnpf-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_GRAPHQL_URL: ${NEXT_PUBLIC_GRAPHQL_URL:-http://localhost:4000/graphql}
+      AUTH_SECRET: ${AUTH_SECRET:-change_this_to_a_long_random_string}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/cnpf_feeder}
       NODE_ENV: production
+    networks:
+      - cnpf-network
 
 volumes:
   mongo_data:
 
+networks:
+  cnpf-network:
+    driver: bridge

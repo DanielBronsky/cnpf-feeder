@@ -99,6 +99,8 @@ export const AvatarCropper = forwardRef<AvatarCropperHandle, Props>(
     ref,
   ) {
     const inputRef = useRef<HTMLInputElement | null>(null);
+    const cropAreaRef = useRef<HTMLDivElement | null>(null);
+    const isCroppingRef = useRef(false);
 
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -111,13 +113,19 @@ export const AvatarCropper = forwardRef<AvatarCropperHandle, Props>(
     useImperativeHandle(
       ref,
       () => ({
-        open: () => inputRef.current?.click(),
+        open: () => {
+          // Блокируем открытие если идет кроп
+          if (!isCroppingRef.current && inputRef.current) {
+            inputRef.current.click();
+          }
+        },
         reset: () => {
           setErr('');
           setImageUrl(null);
           setCrop({ x: 0, y: 0 });
           setZoom(1);
           setCroppedAreaPixels(null);
+          isCroppingRef.current = false;
           if (inputRef.current) inputRef.current.value = '';
         },
       }),
@@ -184,7 +192,38 @@ export const AvatarCropper = forwardRef<AvatarCropperHandle, Props>(
     }, [croppedAreaPixels, imageUrl, onChange, size]);
 
     return (
-      <Wrap>
+      <Wrap
+        onMouseDown={(e) => {
+          // Предотвращаем всплытие событий мыши, чтобы избежать случайных кликов на input
+          if (imageUrl) {
+            isCroppingRef.current = true;
+            e.stopPropagation();
+          }
+        }}
+        onMouseUp={(e) => {
+          // Предотвращаем всплытие событий мыши, чтобы избежать случайных кликов на input
+          if (imageUrl) {
+            e.stopPropagation();
+            setTimeout(() => {
+              isCroppingRef.current = false;
+            }, 100);
+          }
+        }}
+        onTouchStart={(e) => {
+          if (imageUrl) {
+            isCroppingRef.current = true;
+            e.stopPropagation();
+          }
+        }}
+        onTouchEnd={(e) => {
+          if (imageUrl) {
+            e.stopPropagation();
+            setTimeout(() => {
+              isCroppingRef.current = false;
+            }, 100);
+          }
+        }}
+      >
         {mode === 'standalone' ? (
           <Row>
             <Button type='button' onClick={() => inputRef.current?.click()}>
@@ -214,15 +253,108 @@ export const AvatarCropper = forwardRef<AvatarCropperHandle, Props>(
           ref={inputRef}
           type='file'
           accept='image/*'
-          hidden
-          onChange={(e) => onSelectFile(e.target.files?.[0] ?? null)}
+          style={{ 
+            position: 'absolute',
+            width: 0,
+            height: 0,
+            opacity: 0,
+            pointerEvents: imageUrl ? 'none' : 'auto', // Блокируем pointer events когда идет кроп
+            zIndex: -1
+          }}
+          onChange={(e) => {
+            // Блокируем onChange если идет кроп
+            if (isCroppingRef.current) {
+              e.preventDefault();
+              return;
+            }
+            onSelectFile(e.target.files?.[0] ?? null);
+            // Сбрасываем значение input после выбора файла, чтобы onChange срабатывал при повторном выборе того же файла
+            if (e.target) {
+              e.target.value = '';
+            }
+          }}
+          onClick={(e) => {
+            // Блокируем клики если идет кроп
+            if (isCroppingRef.current) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            // Предотвращаем всплытие события, чтобы избежать случайных кликов
+            e.stopPropagation();
+          }}
         />
 
         {err ? <ErrorText>{err}</ErrorText> : null}
 
         {imageUrl ? (
-          <CropBlock>
-            <CropArea>
+          <CropBlock
+            onMouseDown={(e) => {
+              // Устанавливаем флаг что идет кроп
+              isCroppingRef.current = true;
+              // Предотвращаем всплытие событий мыши от области кропа
+              e.stopPropagation();
+            }}
+            onMouseUp={(e) => {
+              // Предотвращаем всплытие событий мыши от области кропа
+              e.stopPropagation();
+              // Сбрасываем флаг через небольшую задержку
+              setTimeout(() => {
+                isCroppingRef.current = false;
+              }, 100);
+            }}
+            onTouchStart={(e) => {
+              // Устанавливаем флаг что идет кроп (для мобильных)
+              isCroppingRef.current = true;
+              e.stopPropagation();
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              setTimeout(() => {
+                isCroppingRef.current = false;
+              }, 100);
+            }}
+            onClick={(e) => {
+              // Предотвращаем случайные клики на область кропа
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <CropArea
+              ref={cropAreaRef}
+              onMouseDown={(e) => {
+                // Устанавливаем флаг что идет кроп
+                isCroppingRef.current = true;
+                // Предотвращаем всплытие событий мыши от области кропа
+                e.stopPropagation();
+              }}
+              onMouseUp={(e) => {
+                // Предотвращаем всплытие событий мыши от области кропа
+                e.stopPropagation();
+                // Сбрасываем флаг через небольшую задержку, чтобы избежать случайных кликов
+                setTimeout(() => {
+                  isCroppingRef.current = false;
+                }, 100);
+              }}
+              onTouchStart={(e) => {
+                // Устанавливаем флаг что идет кроп (для мобильных)
+                isCroppingRef.current = true;
+                e.stopPropagation();
+              }}
+              onTouchEnd={(e) => {
+                // Предотвращаем всплытие событий touch от области кропа
+                e.stopPropagation();
+                // Сбрасываем флаг через небольшую задержку
+                setTimeout(() => {
+                  isCroppingRef.current = false;
+                }, 100);
+              }}
+              onClick={(e) => {
+                // Предотвращаем случайные клики на область кропа
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
               <Cropper
                 image={imageUrl}
                 crop={crop}

@@ -8,5 +8,5 @@ import { FeedClient } from './feed/ui';
 export default async function Home() {
   const me = await getCurrentUser();
 
-  return <FeedClient me={me ? { id: me.id, isAdmin: me.isAdmin } : null} limit={3} />;
+  return <FeedClient me={me ? { id: me.id, isAdmin: me.isAdmin } : null} limit={3} showCompetitions={true} />;
 }

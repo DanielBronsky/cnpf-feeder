@@ -18,8 +18,16 @@ export const Hero = styled.section`
   border-radius: 22px;
   border: 1px solid var(--border);
   background:
-    radial-gradient(900px 500px at 20% 10%, rgba(99, 102, 241, 0.20), transparent 60%),
-    radial-gradient(700px 420px at 90% 40%, rgba(20, 184, 166, 0.16), transparent 62%),
+    radial-gradient(
+      900px 500px at 20% 10%,
+      rgba(99, 102, 241, 0.2),
+      transparent 60%
+    ),
+    radial-gradient(
+      700px 420px at 90% 40%,
+      rgba(20, 184, 166, 0.16),
+      transparent 62%
+    ),
     var(--surface-2);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(10px);
@@ -151,7 +159,9 @@ export const Photo = styled.img`
   background: var(--input-bg);
   flex-shrink: 0;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 
   &:hover {
     transform: scale(1.02);
@@ -214,7 +224,9 @@ export const PhotoViewerClose = styled.button`
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s ease, transform 0.2s ease;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
   z-index: 101;
 
   &:hover {
@@ -223,7 +235,10 @@ export const PhotoViewerClose = styled.button`
   }
 `;
 
-export const PhotoViewerNav = styled.button<{ $left?: boolean; $right?: boolean }>`
+export const PhotoViewerNav = styled.button<{
+  $left?: boolean;
+  $right?: boolean;
+}>`
   position: absolute;
   top: 50%;
   ${({ $left }) => ($left ? 'left: 20px;' : '')}
@@ -242,7 +257,9 @@ export const PhotoViewerNav = styled.button<{ $left?: boolean; $right?: boolean 
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s ease, transform 0.2s ease;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
   z-index: 101;
 
   &:hover {
@@ -283,13 +300,19 @@ export const OkText = styled.div`
 export const ModalOverlay = styled.div`
   position: fixed;
   inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(10px);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 24px 16px;
-  z-index: 9999;
+  z-index: 99999;
   overflow-y: auto;
+  overflow-x: hidden;
 
   @media (max-width: 768px) {
     padding: 16px 12px;
@@ -302,7 +325,7 @@ export const ModalOverlay = styled.div`
 
 export const ModalCard = styled.section`
   width: 100%;
-  max-width: 1100px;
+  max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
   border-radius: 22px;
@@ -311,18 +334,21 @@ export const ModalCard = styled.section`
   color: var(--text);
   padding: 32px;
   position: relative;
-  z-index: 10000;
-  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.80);
+  z-index: 100000;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.9);
+  margin: auto;
 
   @media (max-width: 768px) {
     padding: 24px 20px;
     border-radius: 18px;
     max-height: 95vh;
+    max-width: 95%;
   }
 
   @media (max-width: 520px) {
     padding: 20px 16px;
     border-radius: 16px;
+    max-width: 100%;
   }
 `;
 
@@ -342,7 +368,7 @@ export const CloseButton = styled.button`
   font-size: 18px;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.1);
   }
 `;
 
@@ -350,11 +376,14 @@ export const Form = styled.form`
   display: grid;
   gap: 12px;
 
-  input,
+  input:not([type='checkbox']):not([type='radio']),
   textarea {
     width: 100%;
     outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      background 0.15s ease;
     background: var(--input-bg);
     border: 1px solid var(--border);
     color: var(--text);
@@ -363,7 +392,7 @@ export const Form = styled.form`
     font-size: 15px;
   }
 
-  input:focus,
+  input:not([type='checkbox']):not([type='radio']):focus,
   textarea:focus {
     border-color: var(--focus);
     box-shadow: 0 0 0 4px var(--focus-ring);
@@ -388,6 +417,27 @@ export const LabelText = styled.span`
   opacity: 0.82;
   margin-bottom: 2px;
   display: block;
+`;
+
+export const Input = styled.input`
+  width: 100%;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+
+  &:focus {
+    border-color: var(--focus);
+    box-shadow: 0 0 0 4px var(--focus-ring);
+    background: var(--input-bg-focus);
+  }
 `;
 
 export const FieldError = styled.div<{ $visible?: boolean }>`
@@ -444,7 +494,7 @@ export const ThumbRemove = styled.button`
   padding: 0;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.30);
+  background: rgba(0, 0, 0, 0.3);
   color: rgba(255, 255, 255, 0.92);
   line-height: 1;
 `;
@@ -494,8 +544,13 @@ export const SectionHeader = styled.div`
   border-radius: 20px;
   border: 1px solid var(--border);
   background:
-    linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(99, 102, 241, 0.12) 50%, transparent 100%),
-    linear-gradient(225deg, rgba(236, 72, 153, 0.10) 0%, transparent 60%),
+    linear-gradient(
+      135deg,
+      rgba(139, 92, 246, 0.15) 0%,
+      rgba(99, 102, 241, 0.12) 50%,
+      transparent 100%
+    ),
+    linear-gradient(225deg, rgba(236, 72, 153, 0.1) 0%, transparent 60%),
     radial-gradient(ellipse at top, rgba(99, 102, 241, 0.08), transparent 70%),
     var(--surface-2);
   padding: 28px 20px;
@@ -528,7 +583,8 @@ export const SectionHeader = styled.div`
   }
 
   @keyframes shimmer {
-    0%, 100% {
+    0%,
+    100% {
       background-position: 0% 0%;
     }
     50% {

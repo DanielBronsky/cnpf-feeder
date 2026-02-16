@@ -4,10 +4,13 @@
  * /auth/register
  * Простая форма регистрации: отправляет POST на `/api/auth/register`.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, startTransition } from 'react';
 import { AvatarCropper } from '@/components/AvatarCrooper/AvatarCropper';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMutation, useApolloClient } from '@apollo/client';
+
+import { REGISTER_MUTATION } from '@/lib/graphql/mutations';
 
 import {
   Actions,
@@ -28,13 +31,14 @@ import {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const client = useApolloClient();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [avatarBlob, setAvatarBlob] = useState<Blob | null>(null);
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [msg, setMsg] = useState<string>('');
-  const [loading, setLoading] = useState(false);
+  const [registerMutation, { loading }] = useMutation(REGISTER_MUTATION);
 
   function onClose() {
     router.push('/');
@@ -52,30 +56,60 @@ export default function RegisterPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMsg('');
-    setLoading(true);
-
-    const fd = new FormData();
-    fd.set('email', email);
-    fd.set('username', username);
-    fd.set('password', password);
-    fd.set('passwordConfirm', passwordConfirm);
-    if (avatarBlob) {
-      fd.set(
-        'avatar',
-        new File([avatarBlob], 'avatar.jpg', {
-          type: avatarBlob.type || 'image/jpeg',
-        }),
-      );
-    }
 
     try {
-      const r = await fetch('/api/auth/register', { method: 'POST', body: fd });
+      // Prepare input with optional avatar
+      const input: any = {
+        email,
+        username,
+        password,
+        passwordConfirm,
+      };
 
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) setMsg(data?.error ?? 'Error');
-      else router.push('/');
-    } finally {
-      setLoading(false);
+      // Add avatar if provided
+      if (avatarBlob) {
+        // Convert Blob to File for GraphQL Upload
+        const avatarFile = new File([avatarBlob], 'avatar.jpg', { type: 'image/jpeg' });
+        input.avatar = avatarFile;
+      }
+
+      const { data, errors } = await registerMutation({
+        variables: {
+          input,
+        },
+      });
+
+      if (errors) {
+        setMsg(errors[0]?.message ?? 'Ошибка');
+        return;
+      }
+
+      if (data?.register?.ok && data?.register?.token) {
+        // Устанавливаем cookie через Frontend API route
+        try {
+          await fetch('/api/auth/set-cookie', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: data.register.token }),
+            credentials: 'include',
+          });
+          
+          // Очищаем кэш Apollo Client перед редиректом
+          await client.clearStore().catch(() => {});
+          // Используем startTransition для отложенного обновления состояния и избежания проблем с гидратацией
+          startTransition(() => {
+            router.push('/');
+            router.refresh();
+          });
+        } catch (cookieError) {
+          console.error('Failed to set cookie:', cookieError);
+          setMsg('Ошибка установки cookie');
+        }
+      } else {
+        setMsg('Ошибка регистрации');
+      }
+    } catch (error: any) {
+      setMsg(error?.message ?? 'Ошибка');
     }
   }
 

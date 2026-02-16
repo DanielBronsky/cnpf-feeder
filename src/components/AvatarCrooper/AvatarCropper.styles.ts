@@ -8,6 +8,7 @@ import styled from 'styled-components';
 export const Wrap = styled.div`
   display: grid;
   gap: 12px;
+  position: relative;
 `;
 
 export const Row = styled.div`

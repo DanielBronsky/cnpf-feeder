@@ -20,19 +20,30 @@ export type CurrentUser = {
 };
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const token = (await cookies()).get(AUTH_COOKIE)?.value;
-  if (!token) return null;
+  const cookieStore = await cookies();
+  const token = cookieStore.get(AUTH_COOKIE)?.value;
+  
+  if (!token) {
+    console.log('[getCurrentUser] No token found in cookies');
+    return null;
+  }
 
   try {
     const payload = await verifyAuthToken(token);
+    console.log('[getCurrentUser] Token verified, userId:', payload.sub);
+    
     const db = await getDb();
     const user = await db.collection('users').findOne(
       { _id: new ObjectId(payload.sub) },
       { projection: { email: 1, username: 1, isAdmin: 1, hasAvatar: 1 } }
     );
 
-    if (!user) return null;
+    if (!user) {
+      console.log('[getCurrentUser] User not found in database for userId:', payload.sub);
+      return null;
+    }
 
+    console.log('[getCurrentUser] User found:', user.email);
     return {
       id: user._id.toString(),
       email: user.email,
@@ -40,7 +51,8 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       isAdmin: Boolean(user.isAdmin),
       hasAvatar: Boolean(user.hasAvatar),
     };
-  } catch {
+  } catch (error) {
+    console.error('[getCurrentUser] Error:', error);
     return null;
   }
 }
