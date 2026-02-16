@@ -6,10 +6,11 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
-# Install npm dependencies
-# Используем --legacy-peer-deps для совместимости с apollo-upload-client@17
-COPY package.json package-lock.json* ./
-RUN npm install --legacy-peer-deps
+# Включаем yarn через corepack (идёт с Node 22)
+RUN corepack enable && corepack prepare yarn@1.22.21 --activate
+
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
 
 
 FROM node:22-alpine AS builder
@@ -24,7 +25,7 @@ ARG AUTH_SECRET=build-placeholder
 ENV NEXT_PUBLIC_GRAPHQL_URL=$NEXT_PUBLIC_GRAPHQL_URL
 ENV AUTH_SECRET=$AUTH_SECRET
 ENV NODE_ENV=production
-RUN npm run build
+RUN yarn build
 
 
 FROM node:22-alpine AS runner
@@ -34,12 +35,12 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/package-lock.json ./package-lock.json
+COPY --from=builder /app/yarn.lock ./yarn.lock
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/next.config.ts ./next.config.ts
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+CMD ["yarn", "start"]
 
