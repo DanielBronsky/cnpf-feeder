@@ -5,16 +5,17 @@
 import styled from 'styled-components';
 import { PrimaryButtonBase } from '@/components/Button/Button';
 
-export const ChatContainer = styled.div`
+export const ChatContainer = styled.div<{ $compact?: boolean }>`
   display: flex;
   flex-direction: column;
-  height: 600px;
-  max-height: 80vh;
-  border-radius: 18px;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(10px);
+  height: ${(p) => (p.$compact ? '100%' : '600px')};
+  max-height: ${(p) => (p.$compact ? '100%' : '80vh')};
+  min-height: ${(p) => (p.$compact ? '0' : 'auto')};
+  border-radius: ${(p) => (p.$compact ? '0' : '18px')};
+  border: ${(p) => (p.$compact ? 'none' : '1px solid var(--border)')};
+  background: transparent;
+  box-shadow: ${(p) => (p.$compact ? 'none' : '0 10px 30px rgba(0, 0, 0, 0.35)')};
+  backdrop-filter: none;
   overflow: hidden;
 `;
 

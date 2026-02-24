@@ -40,7 +40,9 @@ interface ChatMessage {
   }>;
 }
 
-export function ChatBot() {
+type ChatBotProps = { compact?: boolean };
+
+export function ChatBot({ compact }: ChatBotProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -137,7 +139,7 @@ export function ChatBot() {
   };
 
   return (
-    <ChatContainer>
+    <ChatContainer $compact={compact}>
       <ChatHeader>
         <ChatTitle>Чат-бот с ИИ</ChatTitle>
         <ChatSubtitle>Задайте вопрос о отчетах или соревнованиях</ChatSubtitle>

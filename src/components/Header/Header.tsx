@@ -43,11 +43,6 @@ export async function Header() {
             </>
           ) : (
             <>
-              <Pill href='/feed'>Отчеты</Pill>
-              <Pill href='/competitions'>Соревнования</Pill>
-              <Pill href='/chat'>Чат-бот</Pill>
-              {me.isAdmin ? <Pill href='/admin/users'>Админка</Pill> : null}
-
               <UserBox>
                 {me.hasAvatar ? (
                   <Avatar src={`/api/user/avatar/${me.id}`} alt='avatar' />

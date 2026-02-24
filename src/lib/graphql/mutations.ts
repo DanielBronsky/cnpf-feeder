@@ -44,6 +44,18 @@ export const UPDATE_PROFILE_MUTATION = gql`
 // For now, avatar upload uses REST endpoint
 // To use GraphQL Upload, you need to send files using the GraphQL multipart request specification
 
+export const REQUEST_PASSWORD_RESET_MUTATION = gql`
+  mutation RequestPasswordReset($email: String!) {
+    requestPasswordReset(email: $email)
+  }
+`;
+
+export const RESET_PASSWORD_MUTATION = gql`
+  mutation ResetPassword($token: String!, $newPassword: String!, $confirmPassword: String!) {
+    resetPassword(token: $token, newPassword: $newPassword, confirmPassword: $confirmPassword)
+  }
+`;
+
 export const UPDATE_PASSWORD_MUTATION = gql`
   mutation UpdatePassword($oldPassword: String!, $newPassword: String!) {
     updatePassword(oldPassword: $oldPassword, newPassword: $newPassword)

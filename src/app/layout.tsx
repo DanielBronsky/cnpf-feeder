@@ -6,6 +6,8 @@ import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { Header } from '@/components/Header/Header';
+import { MainNav } from '@/components/MainNav/MainNav';
+import { ChatAssistantButton } from '@/components/ChatAssistantButton/ChatAssistantButton';
 import { StyledComponentsRegistry } from '@/lib/StyledComponentsRegistry';
 import { ApolloProviderWrapper } from '@/lib/apollo-provider';
 
@@ -42,7 +44,9 @@ export default function RootLayout({
           <ApolloProviderWrapper>
             <>
               <Header />
+              <MainNav />
               {children}
+              <ChatAssistantButton />
             </>
           </ApolloProviderWrapper>
         </StyledComponentsRegistry>

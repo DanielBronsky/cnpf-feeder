@@ -140,6 +140,8 @@ export default function LoginPage() {
 
         <LinkRow>
           Нет аккаунта? <Link href="/auth/register">Регистрация</Link>
+          {' · '}
+          <Link href="/auth/forgot-password">Забыли пароль?</Link>
         </LinkRow>
       </Card>
     </Wrap>

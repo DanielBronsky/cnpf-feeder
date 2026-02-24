@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "eslint .",
     "compose:up": "AUTH_SECRET=change_this_to_a_long_random_string docker compose up --build --force-recreate -d",
+    "compose:start": "./scripts/compose-up.sh",
     "compose:down": "docker compose down",
     "compose:logs": "docker compose logs -f --tail=100",
     "compose:ps": "docker compose ps"
